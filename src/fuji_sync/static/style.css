@@ -1,0 +1,97 @@
+:root {
+  --bg: #f4f5f7; --card: #fff; --text: #1d2125; --muted: #6b7280; --accent: #0a84ff; --danger: #d92d20;
+  --border: #e3e5e8;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #15171a; --card: #1f2226; --text: #e6e8eb; --muted: #9aa1a9; --border: #2e3237; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
+header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 12px 20px; background: var(--card); border-bottom: 1px solid var(--border); }
+h1 { font-size: 19px; margin: 0; }
+h2 { font-size: 16px; margin: 0 0 8px; }
+nav { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.panel { display: none; }
+.panel.active { display: block; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.muted { color: var(--muted); }
+button, input, select { font: inherit; color: inherit; background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; }
+button { cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { color: var(--danger); border-color: var(--danger); }
+button.tab { border: none; }
+button.tab.active { background: var(--accent); color: #fff; }
+.progress { height: 14px; background: var(--border); border-radius: 7px; overflow: hidden; margin: 8px 0; }
+.progress > div { height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+.filename { font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
+table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+td.mono { font-family: ui-monospace, Consolas, monospace; font-size: 13px; word-break: break-all; }
+form label { display: block; margin-bottom: 10px; }
+form input, form select { display: block; width: 100%; margin-top: 4px; }
+pre { white-space: pre-wrap; background: var(--bg); padding: 10px; border-radius: 6px; }
+.ok { color: #12b76a; }
+.err { color: var(--danger); }
+footer { text-align: center; padding: 12px; font-size: 13px; }
+.steps { list-style: none; padding: 0; margin: 8px 0; }
+.step { display: grid; grid-template-columns: 22px 1fr auto; column-gap: 6px; padding: 3px 0; }
+.step .icon { text-align: center; font-weight: bold; }
+.step .elapsed { color: var(--muted); font-size: 13px; }
+.step .detail { grid-column: 2 / 4; color: var(--muted); font-size: 13px; word-break: break-word; }
+.step .detail.err { color: var(--danger); }
+.step.done .icon { color: #12b76a; }
+.step.failed .icon, .step.failed .label { color: var(--danger); }
+.step.stopped .icon { color: var(--muted); }
+.step.running .icon::before { content: ""; display: inline-block; width: 11px; height: 11px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+.step.running .label { font-weight: 600; }
+@keyframes spin { to { transform: rotate(360deg); } }
+details summary { cursor: pointer; color: var(--muted); margin-top: 6px; }
+a { color: var(--accent); }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 0.92em; background: var(--bg); padding: 1px 4px; border-radius: 4px; }
+pre code { background: none; padding: 0; }
+.small { font-size: 13px; }
+
+/* Help: header button, hint boxes, pop-overs */
+button.help-btn { border-radius: 50%; width: 32px; height: 32px; padding: 0; font-weight: 700; margin-left: 6px; }
+.hint { background: color-mix(in srgb, var(--accent) 8%, var(--card)); border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+  border-radius: 8px; padding: 10px 14px; margin: 8px 0 12px; font-size: 14px; }
+.hint ul { margin: 6px 0; padding-left: 20px; }
+.info { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--border); color: var(--text); font-size: 12px; font-weight: 700; cursor: pointer; vertical-align: 1px; }
+.info:hover, .info:focus { background: var(--accent); color: #fff; outline: none; }
+.pop { position: fixed; inset: auto; margin: 0; max-width: 340px; padding: 10px 14px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--card); color: var(--text); box-shadow: 0 8px 24px rgba(0, 0, 0, .18); font-size: 14px; }
+.pop p { margin: 6px 0 0; }
+
+/* Welcome dialog */
+dialog#welcome { max-width: 760px; width: calc(100% - 24px); border: 1px solid var(--border); border-radius: 12px;
+  padding: 0; background: var(--card); color: var(--text); }
+dialog#welcome::backdrop { background: rgba(0, 0, 0, .45); }
+dialog#welcome form { padding: 20px 24px; }
+dialog#welcome h2 { font-size: 20px; }
+dialog#welcome h3 { font-size: 15px; margin: 12px 0 6px; }
+
+/* Numbered checklist */
+.checklist { list-style: none; padding: 0; margin: 8px 0; }
+.checklist li { display: flex; gap: 12px; align-items: flex-start; padding: 6px 0; }
+.num { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  border-radius: 50%; background: var(--border); font-weight: 700; font-size: 13px; }
+.checklist li.done .num { background: #12b76a; color: #fff; }
+.checklist li.done strong { color: var(--muted); }
+
+/* Help tab */
+.manual h2 { font-size: 18px; margin-top: 18px; }
+.manual h2:first-child { margin-top: 0; }
+.manual p, .manual li { max-width: 75ch; }
+.manual h2 { scroll-margin-top: 12px; }
+
+/* Waiting for the camera, registration window */
+label.inline { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
+label.inline input { width: auto; margin-top: 3px; }
+.waiting::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #12b76a;
+  margin-right: 8px; vertical-align: 1px; animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+.countdown { font-variant-numeric: tabular-nums; font-weight: 600; }

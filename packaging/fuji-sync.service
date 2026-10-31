@@ -1,0 +1,21 @@
+[Unit]
+Description=Fujifilm PC AutoSave to NAS daemon
+Wants=network-online.target
+After=network-online.target remote-fs.target
+
+[Service]
+Type=simple
+User=fuji-sync
+Group=fuji-sync
+Environment=LC_ALL=C.UTF-8 PYTHONUNBUFFERED=1 HOME=/var/lib/fuji-sync
+Environment=FUJI_SYNC_CONFIG=/etc/fuji-sync/config.toml FUJI_SYNC_STATE_DIR=/var/lib/fuji-sync
+WorkingDirectory=/var/lib/fuji-sync
+ExecStart=/opt/fuji-sync/venv/bin/fuji-sync serve
+Restart=on-failure
+RestartSec=5
+# No NoNewPrivileges / ProtectSystem: the root mount helper is started via sudo from this service
+# and inherits its mount namespace, so it must be able to write /etc/systemd/system.
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

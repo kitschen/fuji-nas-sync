@@ -1,0 +1,39 @@
+[project]
+name = "fuji-nas-sync"
+version = "0.1.0"
+description = "Raspberry Pi daemon that receives Fujifilm PC AutoSave transfers and writes them to a NAS"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Philipp B." }]
+requires-python = ">=3.11,<3.14"
+# The fujiautosave library itself needs none of these; they are for the fuji_sync daemon
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pydantic>=2",
+    "tomli-w>=1",
+]
+
+[project.scripts]
+fuji-sync = "fuji_sync.cli:main"
+fujiautosave = "fujiautosave.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fujiautosave", "src/fuji_sync"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]

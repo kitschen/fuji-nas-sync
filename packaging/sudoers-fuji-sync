@@ -1,0 +1,2 @@
+# fuji-sync may only run its own mount helper as root (validates all input itself).
+fuji-sync ALL=(root) NOPASSWD: /opt/fuji-sync/bin/fuji-sync-mount

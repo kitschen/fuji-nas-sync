@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fuji NAS Sync</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Fuji NAS Sync</h1>
+  <nav>
+    <button class="tab active" data-tab="status">Status</button>
+    <button class="tab" data-tab="cameras">Cameras</button>
+    <button class="tab" data-tab="nas">NAS</button>
+    <button class="tab" data-tab="history">History</button>
+    <button class="tab" data-tab="settings">Settings</button>
+    <button class="tab" data-tab="help">Help</button>
+    <button id="open-welcome" class="help-btn" title="What is this app and how do I set it up?">?</button>
+  </nav>
+</header>
+
+<dialog id="welcome">
+  <form method="dialog">
+    <h2>Welcome to Fuji NAS Sync</h2>
+    <p>This app receives the photos from your Fujifilm camera's <em>PC AUTO SAVE</em> function and writes them to
+      your NAS, in place of Fujifilm's Windows / Mac software. The camera and the Raspberry Pi meet on your home
+      network: you start the transfer on the camera, the Pi copies every photo it hasn't copied before.</p>
+    <h3>Three steps to get started</h3>
+    <ol class="checklist" id="welcome-checklist"></ol>
+    <div class="row">
+      <a href="#help" data-close>Read the help</a>
+      <div>
+        <button value="close">Close</button>
+        <button value="start" class="primary" id="welcome-start">Start setup</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<main>
+  <section id="tab-status" class="panel active">
+    <div class="card" id="getting-started" hidden>
+      <div class="row">
+        <h2>Getting started</h2>
+        <a href="#help">Help</a>
+      </div>
+      <ol class="checklist" id="status-checklist"></ol>
+    </div>
+    <div class="card">
+      <div class="row">
+        <h2>Current activity</h2>
+        <div>
+          <button id="stop" class="danger" hidden title="Copied files are kept; the next transfer continues with the rest">Stop</button>
+          <button id="demo-autosave" hidden title="Demo mode: let the simulated camera start a transfer">Simulate camera transfer</button>
+        </div>
+      </div>
+      <p id="phase" class="muted">Loading...</p>
+      <ol id="steps" class="steps" hidden></ol>
+      <div id="listing" hidden>
+        <div class="progress"><div id="listing-bar"></div></div>
+        <div class="muted" id="listing-stats"></div>
+      </div>
+      <div id="current" hidden>
+        <div class="filename" id="current-file"></div>
+        <div class="progress"><div id="progress-bar"></div></div>
+        <div class="muted" id="current-stats"></div>
+        <div class="muted" id="queue"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>NAS</h2>
+      <div id="nas-health" class="muted">Loading...</div>
+    </div>
+    <div class="card">
+      <h2>Last transfer</h2>
+      <div id="last-job" class="muted">No transfer since the service started.</div>
+    </div>
+  </section>
+
+  <section id="tab-cameras" class="panel">
+    <div class="card">
+      <div class="row">
+        <h2>Cameras</h2>
+        <div>
+          <button id="demo-register" hidden title="Demo mode: let the simulated camera register">Simulate registration</button>
+          <button id="register-close" hidden>Close registration</button>
+          <button id="register" class="primary">Register camera</button>
+        </div>
+      </div>
+      <div class="hint">
+        <strong>Registering</strong> makes this Pi a destination of the camera's PC AUTO SAVE, under the name
+        <strong class="js-importer"></strong>. Click <em>Register camera</em>, then on the camera open
+        <em>PC AUTO SAVE SETTING</em>, connect to your home Wi-Fi (<em>SIMPLE SETUP</em> or <em>MANUAL SETUP</em>)
+        and select <strong class="js-importer"></strong> from the list of computers.
+        <a href="#help/register">Step by step</a>
+        <label class="inline"><input type="checkbox" id="register-mark-existing">
+          The photos already on the card are in my archive: on the first transfer, only mark them as copied</label>
+      </div>
+      <p id="register-status"></p>
+      <table>
+        <thead><tr><th>Name</th><th>Model</th><th>Camera ID</th><th>Last transfer</th><th>Enabled</th><th></th></tr></thead>
+        <tbody id="camera-rows"></tbody>
+      </table>
+      <p class="muted">The name is used for the camera's folder on the NAS. A camera that is not enabled
+        connects, but nothing is copied. <em>Skip card</em>: on the next transfer the photos on the card are
+        marked as copied without copying them.</p>
+    </div>
+  </section>
+
+  <section id="tab-nas" class="panel">
+    <div class="card">
+      <h2>NAS target</h2>
+      <div class="hint">
+        Where the photos go. Create a shared folder and a user with write access on your NAS first, then enter them
+        here, click <em>Test connection</em> and <em>Save and mount</em>.
+      </div>
+      <form id="nas-form">
+        <label>Type <span class="info" data-pop="pop-type" role="button" tabindex="0" aria-label="Help">?</span>
+          <select name="type">
+            <option value="smb">SMB / CIFS share</option>
+            <option value="nfs">NFS export</option>
+            <option value="path">Existing directory (mounted by me)</option>
+          </select>
+        </label>
+        <div class="only-remote">
+          <label>Server (hostname or IP) <span class="info" data-pop="pop-server" role="button" tabindex="0" aria-label="Help">?</span>
+            <input name="server" placeholder="192.168.1.10 or diskstation.local"></label>
+          <label><span class="only-smb">Share name</span><span class="only-nfs">Export path</span>
+            <span class="info" data-pop="pop-share" role="button" tabindex="0" aria-label="Help">?</span>
+            <input name="share" placeholder="photo (SMB) or /volume1/photo (NFS)"></label>
+          <label>Protocol version (optional) <span class="info" data-pop="pop-version" role="button" tabindex="0" aria-label="Help">?</span>
+            <input name="version" placeholder="leave empty"></label>
+        </div>
+        <div class="only-smb">
+          <label>Username <span class="info" data-pop="pop-user" role="button" tabindex="0" aria-label="Help">?</span>
+            <input name="username" autocomplete="off"></label>
+          <label>Password <span class="muted">(leave empty to keep the stored one)</span>
+            <input name="password" type="password" autocomplete="new-password"></label>
+          <label>Domain (optional)<input name="domain"></label>
+        </div>
+        <div class="only-path">
+          <label>Directory<input name="path" placeholder="/mnt/nas"></label>
+        </div>
+        <label>Sub directory inside the share <span class="info" data-pop="pop-subdir" role="button" tabindex="0" aria-label="Help">?</span>
+          <input name="subdir"></label>
+        <label>Folder layout <span class="muted">({camera} {date} {year} {month})</span>
+          <span class="info" data-pop="pop-layout" role="button" tabindex="0" aria-label="Help">?</span><input name="layout"></label>
+        <div class="row">
+          <button type="button" id="nas-test">Test connection</button>
+          <button type="submit" class="primary">Save and mount</button>
+          <button type="button" id="nas-mount">Mount</button>
+          <button type="button" id="nas-unmount">Unmount</button>
+        </div>
+      </form>
+      <pre id="nas-result" hidden></pre>
+    </div>
+    <div popover id="pop-type" class="pop"><strong>Type</strong><p><em>SMB / CIFS</em> works with Synology, QNAP,
+      Windows and almost every NAS. Choose <em>NFS</em> only if you already use NFS. <em>Existing directory</em> is for
+      a folder you mount on the Pi yourself.</p></div>
+    <div popover id="pop-server" class="pop"><strong>Server</strong><p>The NAS's IP address or name, for example
+      <code>192.168.1.10</code> or <code>diskstation.local</code>. You find it in your router's device list or in
+      Synology Assistant.</p></div>
+    <div popover id="pop-share" class="pop"><strong>Share name / export path</strong><p>SMB: the name of the shared
+      folder as shown on the NAS, for example <code>photo</code> (no slashes). NFS: the full export path, for
+      example <code>/volume1/photo</code> on Synology.</p></div>
+    <div popover id="pop-version" class="pop"><strong>Protocol version</strong><p>Leave empty to let the Pi and the
+      NAS agree. Only if the test fails with a protocol error, try <code>3.0</code> or <code>2.1</code> (SMB), or
+      <code>4.1</code> / <code>3</code> (NFS).</p></div>
+    <div popover id="pop-user" class="pop"><strong>Username and password</strong><p>A NAS user with
+      <em>Read/Write</em> permission on the shared folder. The password is stored on the Pi and only readable by the
+      system. If gopro-nas-sync runs on the same Pi, both apps can use the same NAS user.</p></div>
+    <div popover id="pop-subdir" class="pop"><strong>Sub directory</strong><p>A folder inside the share where all
+      Fujifilm photos go, created automatically. Leave empty to write directly into the share.</p></div>
+    <div popover id="pop-layout" class="pop"><strong>Folder layout</strong><p>How photos are sorted below the sub
+      directory, by capture date. <code>{camera}/{date}</code> gives <code>X-E2 BD35/2026-10-31/DSCF2090.JPG</code>.
+      <code>{year}/{month}</code> gives <code>2026/10/DSCF2090.JPG</code>.</p></div>
+  </section>
+
+  <section id="tab-history" class="panel">
+    <div class="card">
+      <div class="row">
+        <h2>Copied files</h2>
+        <div>
+          <input id="search" placeholder="Search...">
+          <select id="history-camera"><option value="">All cameras</option></select>
+          <button id="reset-all" class="danger">Reset list</button>
+        </div>
+      </div>
+      <p class="muted">Files in this list are not copied again. Remove an entry to copy that file on the next
+        transfer. Files marked as copied without copying (<em>Skip card</em>) have no NAS path.</p>
+      <table>
+        <thead><tr><th>Camera file</th><th>Captured</th><th>Size</th><th>NAS path</th><th>Copied</th><th></th></tr></thead>
+        <tbody id="history-rows"></tbody>
+      </table>
+      <p class="muted" id="history-total"></p>
+    </div>
+  </section>
+
+  <section id="tab-settings" class="panel">
+    <div class="card">
+      <h2>Settings</h2>
+      <form id="settings-form">
+        <label>Destination name shown on the camera
+          <span class="info" data-pop="pop-importer" role="button" tabindex="0" aria-label="Help">?</span>
+          <input name="importer" maxlength="26"></label>
+        <label>Registration window (minutes)<input name="registration_minutes" type="number" min="1" max="60"></label>
+        <label>Network interface to the NAS (empty = don't check)
+          <span class="info" data-pop="pop-lan" role="button" tabindex="0" aria-label="Help">?</span>
+          <input name="lan_interface" placeholder="eth0"></label>
+        <div class="row"><span class="muted" id="settings-port"></span>
+          <button type="submit" class="primary">Save</button></div>
+      </form>
+      <pre id="settings-result" hidden></pre>
+    </div>
+    <div popover id="pop-importer" class="pop"><strong>Destination name</strong><p>The name the camera lists when
+      registering and shows when it starts PC AUTO SAVE, like a computer name. Letters, digits and dashes, no spaces.
+      <strong>Cameras must register again after a change.</strong> If you replace a Windows PC, you can use that
+      PC's name here (turn the PC's PC AutoSave off) and the camera does not need to register again.</p></div>
+    <div popover id="pop-lan" class="pop"><strong>Network interface</strong><p>Before each transfer the app checks
+      that the NAS is reached through this interface, usually <code>eth0</code> (the network cable). Leave empty if
+      the Pi uses Wi-Fi.</p></div>
+  </section>
+
+  <section id="tab-help" class="panel">
+    <div class="card manual">
+      <h2 id="help-network">How it works</h2>
+      <p>The camera joins your home Wi-Fi and looks for its registered destination by name. The Pi answers, the
+        camera connects to it and the Pi copies all photos and movies it has not copied before. The camera shows the
+        progress (for example <code>3/12</code>) and turns itself off when it is done. Nothing is deleted from the
+        card.</p>
+      <ul>
+        <li>The camera and the Pi must be in the same network (subnet), because the camera finds the Pi with a
+          broadcast. A Pi on a network cable at the same router is fine.</li>
+        <li>Older cameras like the X-E2 only use <strong>2.4 GHz</strong> Wi-Fi.</li>
+        <li>No firewall on the Pi may block UDP and TCP ports 51541 and 51542.</li>
+        <li>On a computer that also runs Fujifilm's PC AutoSave, only one of the two can listen. Turn Fujifilm's
+          off (Windows service <code>FFPCAutoSave</code>).</li>
+      </ul>
+
+      <h2 id="help-register">Register the camera (once)</h2>
+      <ol>
+        <li>In the <a href="#cameras">Cameras</a> tab, click <em>Register camera</em>. The Pi accepts
+          registrations for a few minutes. If the card already holds photos that are in your archive, tick the box
+          to only mark them as copied on the first transfer.</li>
+        <li>On the camera: <em>MENU &gt; SET-UP &gt; PC AUTO SAVE SETTING</em> (names as on the X-E2; other models
+          are similar).</li>
+        <li>Choose <em>SIMPLE SETUP</em> (press WPS on your router) or <em>MANUAL SETUP</em> (pick your Wi-Fi and
+          enter its password).</li>
+        <li>The camera lists the computers it finds. Select <strong class="js-importer"></strong>. The Cameras tab
+          shows the camera once it registered.</li>
+      </ol>
+      <p class="muted">A camera that already knows this destination name (for example because the Pi took over a
+        PC's name) is added automatically on its first transfer.</p>
+
+      <h2 id="help-transfer">Transfer photos</h2>
+      <ol>
+        <li>On the camera, in playback mode: <em>MENU &gt; PC AUTO SAVE</em>.</li>
+        <li>The camera connects to <strong class="js-importer"></strong>. The Status tab shows the progress.</li>
+      </ol>
+      <p>The camera does not remember what it sent, so it offers every file on the card each time. The Pi skips the
+        files it has copied before (same camera, file name, capture time and size). Reading the file list takes about
+        a quarter of a second per file: with a full card, the first new photo arrives after some minutes.</p>
+      <p>If a transfer is interrupted, the next one continues, including the file that was in progress.</p>
+
+      <h2 id="help-api">Status for scripts</h2>
+      <pre>curl <span class="js-origin"></span>/api/status</pre>
+    </div>
+  </section>
+</main>
+<footer class="muted" id="footer"></footer>
+<script src="/static/app.js"></script>
+</body>
+</html>
