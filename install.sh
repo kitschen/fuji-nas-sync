@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # fuji-nas-sync installer for Raspberry Pi OS (Bookworm or later). Coexists with gopro-nas-sync.
 #
+#   curl -fsSL https://raw.githubusercontent.com/kitschen/fuji-nas-sync/main/install.sh | sudo bash
 #   sudo ./install.sh                  # from a local checkout
 #   sudo ./install.sh --reconfigure    # run the setup questions again
 #   sudo ./install.sh --uninstall [--purge]

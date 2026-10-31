@@ -26,7 +26,13 @@ takes about a quarter of a second per file, so with a full card the first new ph
 ## Install on a Raspberry Pi
 
 ```bash
-git clone <this repository> fuji-nas-sync
+curl -fsSL https://raw.githubusercontent.com/kitschen/fuji-nas-sync/main/install.sh | sudo bash
+```
+
+Or from a checkout:
+
+```bash
+git clone https://github.com/kitschen/fuji-nas-sync.git
 cd fuji-nas-sync
 sudo ./install.sh
 ```
@@ -41,7 +47,9 @@ The installer creates the `fuji-sync` service user, `/opt/fuji-sync`, `/etc/fuji
    on the first transfer.
 3. On the camera, start *PC AUTO SAVE* from the playback menu.
 
-`sudo ./install.sh --reconfigure` asks the questions again, `sudo ./install.sh --uninstall [--purge]` removes it.
+Run the installer again to update to the latest version; it keeps the settings, the NAS mount and the registered
+cameras. `sudo ./install.sh --reconfigure` asks the questions again, `sudo ./install.sh --uninstall [--purge]` removes
+it.
 
 ## Trying the daemon without a Pi or camera
 
