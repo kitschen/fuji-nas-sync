@@ -71,6 +71,10 @@ answering `501 REGISTER method not supported`, and registration failing). Use pl
    DSCPORT: 
    ```
    Destination answers `HTTP/1.1 200 OK\r\n\r\n`, then connects to camera:55740.
+   The camera opens port 55740 only a moment later and refuses connections until then (seen from the Pi: refused
+   10 ms after the IMPORT answer). Windows retries a refused connect by itself after ~0.5 s, so PC AutoSave never
+   notices; on Linux the destination must retry. If nobody connects, the camera stays on "Checking files to be
+   saved" until cancelled.
 
 ## PTP channel (TCP 55740)
 
