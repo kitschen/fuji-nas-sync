@@ -113,3 +113,35 @@ async def test_cancelled_transaction_still_consumes_its_response():
     reader.feed_data(bytes.fromhex("0c0000000300012002000000"))  # response to transaction 2
     response = await asyncio.wait_for(conn.transaction(Op.CLOSE_SESSION), 1)
     assert response.code == 0x2001 and first.cancelled()
+
+
+async def test_connect_retries_until_the_camera_opens_its_port():
+    """The camera refuses the PTP connection for a moment after answering IMPORT."""
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    accepted = asyncio.Event()
+
+    async def open_later() -> asyncio.Server:
+        await asyncio.sleep(0.6)
+        return await asyncio.start_server(lambda r, w: accepted.set(), "127.0.0.1", port)
+
+    opener = asyncio.ensure_future(open_later())
+    conn = await PtpConnection.connect("127.0.0.1", port, timeout=5, retry_for=5)
+    await asyncio.wait_for(accepted.wait(), 2)
+    await conn.close()
+    server = await opener
+    server.close()
+    await server.wait_closed()
+
+
+async def test_connect_gives_up_when_nothing_listens():
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    with pytest.raises(ConnectionRefusedError):
+        await PtpConnection.connect("127.0.0.1", port, timeout=5, retry_for=0.3)

@@ -17,6 +17,8 @@ INIT_NAME_CHARS = 27  # fixed-size UTF-16 name field of the init request
 ACK_NAME_CHARS = 20  # fixed-size UTF-16 model field of the init ack
 END_OF_SESSION = b"\x08\x00\x00\x00\xff\xff\xff\xff"
 MAX_PACKET = 16 * 1024 * 1024
+CONNECT_RETRY_FOR = 10.0  # seconds to keep retrying a refused connect to the camera's PTP port
+CONNECT_RETRY_DELAY = 0.25
 
 RESPONSE_OK = 0x2001
 
@@ -158,8 +160,19 @@ class PtpConnection:
         self.ended = False
 
     @classmethod
-    async def connect(cls, host: str, port: int, timeout: float = 30.0) -> PtpConnection:
-        reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
+    async def connect(cls, host: str, port: int, timeout: float = 30.0, retry_for: float = CONNECT_RETRY_FOR
+                      ) -> PtpConnection:
+        # The camera opens its PTP port a moment after answering IMPORT and refuses connections until then.
+        # Windows retries a refused connect by itself (which is why PC AutoSave never notices); Linux does not.
+        deadline = asyncio.get_running_loop().time() + retry_for
+        while True:
+            try:
+                reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
+                break
+            except ConnectionRefusedError:
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise
+                await asyncio.sleep(CONNECT_RETRY_DELAY)
         # asyncio disables Nagle. With it on, as with PC AutoSave, a data container waits for the camera to
         # acknowledge its command: the camera drops whatever arrives in the same read as the command.
         writer.get_extra_info("socket").setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 0)
