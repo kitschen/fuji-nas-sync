@@ -18,7 +18,7 @@ from pydantic import BaseModel, ValidationError
 from fujiautosave.fake import FakeCamera
 
 from fuji_sync import __version__
-from fuji_sync.config import CameraLinkConfig, ConfigStore, NasConfig
+from fuji_sync.config import CameraLinkConfig, ConfigStore, NasConfig, ScanConfig
 from fuji_sync.db import Database
 from fuji_sync.nas import NasError, NasManager
 from fuji_sync.sync import Busy, SyncService
@@ -35,6 +35,7 @@ class CameraUpdate(BaseModel):
     name: str | None = None
     enabled: bool | None = None
     mark_existing: bool | None = None
+    full_scan: bool | None = None
 
 
 class RegistrationRequest(BaseModel):
@@ -45,6 +46,9 @@ class SettingsUpdate(BaseModel):
     importer: str | None = None
     registration_minutes: int | None = None
     lan_interface: str | None = None
+    scan_quick: bool | None = None
+    scan_stop_after: int | None = None
+    scan_full_every_days: int | None = None
 
 
 def create_app(config: ConfigStore, db: Database, sync: SyncService, nas: NasManager, *,
@@ -131,7 +135,8 @@ def create_app(config: ConfigStore, db: Database, sync: SyncService, nas: NasMan
 
     @app.patch("/api/cameras/{camera_id}", dependencies=auth)
     async def update_camera(camera_id: str, body: CameraUpdate) -> dict:
-        if not db.update_camera(camera_id, name=body.name, enabled=body.enabled, mark_existing=body.mark_existing):
+        if not db.update_camera(camera_id, name=body.name, enabled=body.enabled, mark_existing=body.mark_existing,
+                                full_scan=body.full_scan):
             raise HTTPException(404, "Unknown camera")
         return {"ok": True}
 
@@ -147,7 +152,9 @@ def create_app(config: ConfigStore, db: Database, sync: SyncService, nas: NasMan
     async def get_settings() -> dict:
         cfg = config.config
         return {"importer": cfg.camera.importer, "registration_minutes": cfg.camera.registration_minutes,
-                "lan_interface": cfg.network.lan_interface, "port": cfg.server.port}
+                "lan_interface": cfg.network.lan_interface, "port": cfg.server.port,
+                "scan_quick": cfg.scan.quick, "scan_stop_after": cfg.scan.stop_after,
+                "scan_full_every_days": cfg.scan.full_every_days}
 
     @app.put("/api/settings", dependencies=auth)
     async def put_settings(body: SettingsUpdate) -> dict:
@@ -156,6 +163,11 @@ def create_app(config: ConfigStore, db: Database, sync: SyncService, nas: NasMan
             cfg.camera = CameraLinkConfig.model_validate({
                 **cfg.camera.model_dump(),
                 **body.model_dump(include={"importer", "registration_minutes"}, exclude_none=True),
+            })
+            cfg.scan = ScanConfig.model_validate({
+                **cfg.scan.model_dump(),
+                **{k.removeprefix("scan_"): v for k, v in body.model_dump(exclude_none=True).items()
+                   if k.startswith("scan_")},
             })
         except ValidationError as e:
             raise HTTPException(400, e.errors()[0]["msg"])

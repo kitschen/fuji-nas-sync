@@ -104,7 +104,8 @@
       </table>
       <p class="muted">The name is used for the camera's folder on the NAS. A camera that is not enabled
         connects, but nothing is copied. <em>Skip card</em>: on the next transfer the photos on the card are
-        marked as copied without copying them.</p>
+        marked as copied without copying them. <em>Full scan</em>: the next transfer reads the whole card instead
+        of only the newest files.</p>
     </div>
   </section>
 
@@ -208,6 +209,13 @@
         <label>Network interface to the NAS (empty = don't check)
           <span class="info" data-pop="pop-lan" role="button" tabindex="0" aria-label="Help">?</span>
           <input name="lan_interface" placeholder="eth0"></label>
+        <label class="inline"><input type="checkbox" name="scan_quick">
+          <span>Quick scan: read the newest files first and stop at already copied ones
+            <span class="info" data-pop="pop-scan" role="button" tabindex="0" aria-label="Help">?</span></span></label>
+        <label>Stop after this many already copied files in a row
+          <input name="scan_stop_after" type="number" min="1" max="100"></label>
+        <label>Read the whole card anyway every ... days (0 = only when needed)
+          <input name="scan_full_every_days" type="number" min="0" max="365"></label>
         <div class="row"><span class="muted" id="settings-port"></span>
           <button type="submit" class="primary">Save</button></div>
       </form>
@@ -217,6 +225,12 @@
       registering and shows when it starts PC AUTO SAVE, like a computer name. Letters, digits and dashes, no spaces.
       <strong>Cameras must register again after a change.</strong> If you replace a Windows PC, you can use that
       PC's name here (turn the PC's PC AutoSave off) and the camera does not need to register again.</p></div>
+    <div popover id="pop-scan" class="pop"><strong>Quick scan</strong><p>The camera offers every file on the card
+      and reading the list takes a quarter of a second per file: about 17 minutes for 4000 photos. A quick scan reads
+      from the newest file backwards and stops at files that are already copied, usually in a few seconds.</p>
+      <p>Photos shot after deleting others in the camera can land in the gaps instead of at the end. The app notices
+      that from the number of files and the card's free space and then reads the whole card. Click <em>Full scan</em>
+      in the Cameras tab to force it once.</p></div>
     <div popover id="pop-lan" class="pop"><strong>Network interface</strong><p>Before each transfer the app checks
       that the NAS is reached through this interface, usually <code>eth0</code> (the network cable). Leave empty if
       the Pi uses Wi-Fi.</p></div>
@@ -259,8 +273,10 @@
         <li>The camera connects to <strong class="js-importer"></strong>. The Status tab shows the progress.</li>
       </ol>
       <p>The camera does not remember what it sent, so it offers every file on the card each time. The Pi skips the
-        files it has copied before (same camera, file name, capture time and size). Reading the file list takes about
-        a quarter of a second per file: with a full card, the first new photo arrives after some minutes.</p>
+        files it has copied before (same camera, file name, capture time and size). Reading a file's details takes
+        about a quarter of a second, so the Pi reads from the newest file backwards and stops at the ones it already
+        has (<em>quick scan</em>). It reads the whole card on the first transfer, when photos were deleted in the
+        camera, every 30 days, and when you click <em>Full scan</em>: with a full card that takes some minutes.</p>
       <p>If a transfer is interrupted, the next one continues, including the file that was in progress.</p>
 
       <h2 id="help-api">Status for scripts</h2>

@@ -145,6 +145,10 @@ u16 count, then count × (u16 property code, u32 value).
 - Handles are positions, not stable ids: handle 9 was `DSCF4558.JPG` in one session and `DSCF4563.JPG` in the
   next. The order is not chronological.
 - So the destination keeps its own list, keyed by camera `DSCNAME` + filename + capture date + size.
+- New photos normally get the last handles. The handle 9 example looks like a file shot after a deletion filling
+  the freed place, so after deleting photos in the camera, new ones can sit anywhere. fuji_sync reads newest first
+  and stops at already copied files (quick scan), then checks the file count and the card's free space against the
+  previous session and reads the whole card if they don't add up (`SyncService._scan`).
 
 ### ObjectInfo (data of 0x1008)
 
@@ -193,6 +197,11 @@ the firmware update changes nothing for us, and the movie error is still on the 
   GetObjectPropList, which PC AutoSave never uses).
 - Camera timeout when the destination is slow (NAS write stalls).
 - Whether `GetDeviceInfo` (serial number) is allowed in AutoSave mode; PC AutoSave never calls it.
+- Whether `GetStorageInfo` (0x1005, free space) is allowed in AutoSave mode; PC AutoSave never calls it. Without it
+  the quick scan only has the file count to notice photos shot into gaps (deleting n and shooting n goes unseen until
+  the next full scan).
+- Whether the camera really puts new files into freed places (the handle 9 observation), and whether file order
+  otherwise follows shooting order on a card with many folders.
 - The camera normally sends IMPORT about 11–13 s after our NOTIFY. On 2026-10-31 it twice sent DISCOVER, accepted
   the NOTIFY and then never sent IMPORT (no TCP connection to 51541 at all); the third try right after worked. Both
   were the first tries after the camera had searched for a long time while no destination was listening. Not captured;

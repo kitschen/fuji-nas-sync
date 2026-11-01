@@ -26,6 +26,10 @@ from fuji_sync.nas import NasError, NasManager
 logger = logging.getLogger(__name__)
 
 
+# Cluster rounding: per file, the card's free space may differ from the file sizes by up to a cluster
+FREE_SPACE_SLACK = 256 * 1024
+
+
 class Busy(RuntimeError):
     pass
 
@@ -78,6 +82,8 @@ class Job:
     message: str = ""
     list_done: int = 0
     list_total: int = 0
+    scan: str = ""  # quick | full
+    scan_note: str = ""  # why the whole card was read
     files_found: int = 0
     files_new: int = 0
     files_done: int = 0
@@ -329,24 +335,21 @@ class SyncService:
             job.step("nas", f"{cfg.nas.target_dir} is writable, {nas_status.free_bytes / 1024**3:.1f} GB free")
 
         job.phase = "listing"
-        job.list_total = session.object_count
-        job.step("list", f"Reading {session.object_count} file(s) from the camera...")
-
-        def listed(done: int, total: int) -> None:
-            job.list_done, job.list_total = done, total
-            job.step("list", f"Reading file list: {done} of {total}")
-
-        objects = await session.list_objects(listed)
-        done_keys = self.db.transferred_keys(camera.camera_id)
-        new = [o for o in objects if file_key(o) not in done_keys]
+        new, free, full = await self._scan(job, session, camera)
         new.sort(key=lambda o: (o.captured is None, o.captured or 0, o.filename))
-        job.files_found, job.files_new = len(objects), len(new)
-        job.step("list", f"{len(objects)} file(s) on the camera, {len(new)} new")
+        job.files_found, job.files_new = session.object_count, len(new)
+
+        def record_card(remaining: list[ObjectInfo], full_scan: bool = False) -> None:
+            self.db.record_card(camera.camera_id, session.object_count - len(remaining),
+                                None if free is None else free + sum(o.size for o in remaining), full_scan)
+
+        record_card(new, full)
 
         if camera.mark_existing:
             job.step("mark", f"Marking {len(new)} file(s) as copied without copying them")
             self.db.add_transferred_many(camera.camera_id, [file_key(o) for o in new])
             self.db.update_camera(camera.camera_id, mark_existing=False)
+            record_card([])
             await self._finish(job, session, 0, 0)
             job.message = (f"Marked {len(new)} file(s) on {camera.name} as copied. "
                            "From now on only new photos are transferred.")
@@ -360,20 +363,107 @@ class SyncService:
         job.phase = "transferring"
         if new:
             job.step("transfer", f"{len(new)} new file(s)")
-        for index, obj in enumerate(new, start=1):
-            job.queue_index = index
-            await session.set_progress(index - 1, len(new))
-            dest = destination(cfg.nas.target_dir, cfg.storage.layout, camera, obj)
-            job.step("transfer", f"File {index} of {len(new)}: {obj.filename}")
-            await self._transfer(job, session, obj, dest)
-            filename, captured, size = file_key(obj)
-            self.db.add_transferred(camera.camera_id, filename, captured, size, str(dest))
-            job.files_done += 1
-            job.bytes_done += obj.size
+        try:
+            for index, obj in enumerate(new, start=1):
+                job.queue_index = index
+                await session.set_progress(index - 1, len(new))
+                dest = destination(cfg.nas.target_dir, cfg.storage.layout, camera, obj)
+                job.step("transfer", f"File {index} of {len(new)}: {obj.filename}")
+                await self._transfer(job, session, obj, dest)
+                filename, captured, size = file_key(obj)
+                self.db.add_transferred(camera.camera_id, filename, captured, size, str(dest))
+                job.files_done += 1
+                job.bytes_done += obj.size
+        finally:
+            record_card(new[job.files_done:])
         job.current = None
         await self._finish(job, session, len(new), len(new))
         job.message = f"Transferred {job.files_done} file(s) from {camera.name}" if new else \
             f"No new files on {camera.name}"
+
+    def _full_scan_reason(self, camera: Camera) -> str | None:
+        """Why the next scan must read the whole card, or None for a quick scan."""
+        scan = self.config.config.scan
+        if not scan.quick:
+            return "quick scan is off"
+        if camera.mark_existing:
+            return "marking the card as copied"
+        if camera.full_scan:
+            return "requested"
+        if camera.card_known is None:
+            return "first transfer"
+        if scan.full_every_days and (camera.last_full_scan_at is None
+                                     or time.time() - camera.last_full_scan_at > scan.full_every_days * 86400):
+            return f"no full scan for {scan.full_every_days} days"
+        return None
+
+    @staticmethod
+    def _quick_scan_doubt(camera: Camera, count: int, free: int | None, new: list[ObjectInfo]) -> str | None:
+        """Why the new files found at the end of the card may not be all of them, or None.
+
+        New photos normally get the last handles. After photos were deleted in the camera, new ones can fill the
+        gaps instead, where a quick scan does not look. Then the card no longer holds exactly the files known last
+        time plus the new ones at the end (count), or its free space shows files the scan did not see (free space;
+        catches deleting some photos and shooting as many). Both are compared with what the last scan recorded.
+        """
+        if count - len(new) != camera.card_known:
+            return (f"{count} files on the card, {camera.card_known} known last time and {len(new)} new at the end: "
+                    "files were deleted or added elsewhere")
+        if free is not None and camera.card_free is not None:
+            if abs(camera.card_free - sum(o.size for o in new) - free) > FREE_SPACE_SLACK * (len(new) + 1):
+                return "the card's free space does not match the new files at the end"
+        return None
+
+    async def _scan(self, job: Job, session: AutoSaveSession, camera: Camera
+                    ) -> tuple[list[ObjectInfo], int | None, bool]:
+        """The files not copied yet, the card's free space, and whether the whole card was read.
+
+        Quick scan: from the newest file backwards until `stop_after` already copied ones in a row, then a
+        consistency check (see _quick_scan_doubt). If in doubt, or a full scan is due, it reads the rest of the card.
+        """
+        scan = self.config.config.scan
+        count = session.object_count
+        done_keys = self.db.transferred_keys(camera.camera_id)
+        free = await session.free_space()
+        job.list_total = count
+        read: set[int] = set()
+        new: list[ObjectInfo] = []
+        reason = self._full_scan_reason(camera)
+
+        if reason is None:
+            job.scan = "quick"
+            job.step("list", f"Reading the newest of {count} file(s)...")
+            in_a_row = 0
+            async for obj in session.iter_objects(newest_first=True):
+                read.add(obj.handle)
+                job.list_done = len(read)
+                if file_key(obj) in done_keys:
+                    in_a_row += 1
+                    if in_a_row >= scan.stop_after:
+                        break
+                else:
+                    in_a_row = 0
+                    new.append(obj)
+                job.step("list", f"Reading the newest files: {len(read)} read, {len(new)} new")
+            if len(read) < count:
+                reason = self._quick_scan_doubt(camera, count, free, new)
+                if reason:
+                    logger.info("quick scan of %s not conclusive: %s", camera.name, reason)
+
+        if reason is not None:
+            job.scan, job.scan_note = "full", reason
+            job.step("list", f"Reading all {count} file(s): {reason}")
+            async for obj in session.iter_objects(handles=[h for h in range(1, count + 1) if h not in read]):
+                read.add(obj.handle)
+                job.list_done = len(read)
+                if file_key(obj) not in done_keys:
+                    new.append(obj)
+                job.step("list", f"Reading file list: {len(read)} of {count}")
+
+        full = len(read) == count
+        kind = "full" if full else "quick"
+        job.step("list", f"{len(read)} of {count} file(s) read ({kind} scan), {len(new)} new")
+        return new, free, full
 
     async def _transfer(self, job: Job, session: AutoSaveSession, obj: ObjectInfo, dest: Path) -> None:
         """Copy into `<dest>.part`, resuming a part left by an interrupted transfer, then rename."""

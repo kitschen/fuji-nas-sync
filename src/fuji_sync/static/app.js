@@ -183,8 +183,10 @@ function renderStatus(s) {
     $("#listing").hidden = job.phase !== "listing" || !job.list_total;
     if (job.list_total) {
       $("#listing-bar").style.width = `${((100 * job.list_done) / job.list_total).toFixed(1)}%`;
-      $("#listing-stats").textContent = `${job.list_done} of ${job.list_total} files read` +
-        (job.list_done ? `, about ${fmtDuration(((job.list_total - job.list_done) * (Date.now() / 1000 - job.started_at)) / job.list_done)} left` : "");
+      $("#listing-stats").textContent = job.scan === "quick"
+        ? `Quick scan: ${job.list_done} newest of ${job.list_total} files read`
+        : `${job.list_done} of ${job.list_total} files read` +
+          (job.list_done ? `, about ${fmtDuration(((job.list_total - job.list_done) * (Date.now() / 1000 - job.started_at)) / job.list_done)} left` : "");
     }
     const cur = job.current;
     $("#current").hidden = !cur;
@@ -206,7 +208,8 @@ function renderStatus(s) {
       `<div><strong>${esc(last.camera_name)}</strong> ${outcome} at ${fmtTime(last.finished_at)}</div>` +
       `<div>${esc(last.message)}</div>` +
       (last.error ? `<div class="err">${esc(last.error)}</div>` : "") +
-      `<div class="muted">${last.files_found} file(s) on the card, ${last.files_new} new, ${last.files_done} copied (${fmtBytes(last.bytes_done)})</div>` +
+      `<div class="muted">${last.files_found} file(s) on the card, ${last.files_new} new, ${last.files_done} copied (${fmtBytes(last.bytes_done)})` +
+      (last.scan ? `; ${esc(last.scan)} scan${last.scan_note ? ` (${esc(last.scan_note)})` : ""}` : "") + "</div>" +
       (last.steps?.length ? `<details><summary>Steps</summary><ol class="steps">${renderSteps(last.steps)}</ol></details>` : "");
   }
 }
@@ -264,9 +267,12 @@ async function loadCameras() {
       <td>${esc(c.model)}</td>
       <td class="mono">${id}</td>
       <td>${fmtTime(c.last_sync_at)}${c.last_error ? `<div class="err">${esc(c.last_error)}</div>` : ""}
-        ${c.mark_existing ? '<div class="muted">Next transfer: mark the card as copied</div>' : ""}</td>
+        ${c.mark_existing ? '<div class="muted">Next transfer: mark the card as copied</div>' : ""}
+        ${c.full_scan ? '<div class="muted">Next transfer: full scan</div>' : ""}
+        ${c.last_full_scan_at ? `<div class="muted small">Last full scan ${fmtTime(c.last_full_scan_at)}</div>` : ""}</td>
       <td><input type="checkbox" ${c.enabled ? "checked" : ""} data-enable="${id}"></td>
       <td><button data-skip="${id}" data-on="${c.mark_existing ? 0 : 1}" title="On the next transfer, mark the photos on the card as copied without copying them">${c.mark_existing ? "Don't skip" : "Skip card"}</button>
+        <button data-full="${id}" data-on="${c.full_scan ? 0 : 1}" title="On the next transfer, read the whole card instead of only the newest files">${c.full_scan ? "Quick scan" : "Full scan"}</button>
         <button class="danger" data-forget="${id}">Forget</button></td>
     </tr>`;
   }).join("") || '<tr><td colspan="6" class="muted">No camera registered yet.</td></tr>';
@@ -287,6 +293,10 @@ $("#camera-rows").addEventListener("click", async (ev) => {
   try {
     if (t.dataset.skip) {
       await api("PATCH", `/api/cameras/${encodeURIComponent(t.dataset.skip)}`, { mark_existing: t.dataset.on === "1" });
+      loadCameras();
+    }
+    if (t.dataset.full) {
+      await api("PATCH", `/api/cameras/${encodeURIComponent(t.dataset.full)}`, { full_scan: t.dataset.on === "1" });
       loadCameras();
     }
     if (t.dataset.forget && confirm("Forget this camera? Its list of copied files is kept. " +
@@ -396,6 +406,9 @@ async function loadSettings() {
   settingsForm.importer.value = s.importer;
   settingsForm.registration_minutes.value = s.registration_minutes;
   settingsForm.lan_interface.value = s.lan_interface;
+  settingsForm.scan_quick.checked = s.scan_quick;
+  settingsForm.scan_stop_after.value = s.scan_stop_after;
+  settingsForm.scan_full_every_days.value = s.scan_full_every_days;
   $("#settings-port").textContent = `Web UI port ${s.port} (change it in the config file)`;
 }
 settingsForm.addEventListener("submit", async (ev) => {
@@ -404,6 +417,9 @@ settingsForm.addEventListener("submit", async (ev) => {
     importer: settingsForm.importer.value.trim(),
     registration_minutes: Number(settingsForm.registration_minutes.value),
     lan_interface: settingsForm.lan_interface.value.trim(),
+    scan_quick: settingsForm.scan_quick.checked,
+    scan_stop_after: Number(settingsForm.scan_stop_after.value),
+    scan_full_every_days: Number(settingsForm.scan_full_every_days.value),
   };
   if (body.importer !== currentImporter &&
     !confirm(`Rename the destination to "${body.importer}"? Cameras registered under "${currentImporter}" must register again.`)) return;

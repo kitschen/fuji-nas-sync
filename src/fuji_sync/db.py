@@ -18,7 +18,11 @@ CREATE TABLE IF NOT EXISTS cameras (
     registered_at  REAL NOT NULL,
     last_seen_at   REAL,
     last_sync_at   REAL,
-    last_error     TEXT
+    last_error     TEXT,
+    full_scan      INTEGER NOT NULL DEFAULT 0,  -- next transfer reads the whole card
+    last_full_scan_at REAL,
+    card_known     INTEGER,  -- files on the card that were in the list after the last scan
+    card_free      INTEGER   -- free bytes on the card then, plus the size of the files not yet copied
 );
 CREATE TABLE IF NOT EXISTS transferred (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,6 +35,14 @@ CREATE TABLE IF NOT EXISTS transferred (
     UNIQUE (camera_id, filename, captured, size)
 );
 """
+
+# Columns added after the first release: (name, definition) for ALTER TABLE on existing databases
+CAMERA_COLUMNS = [
+    ("full_scan", "INTEGER NOT NULL DEFAULT 0"),
+    ("last_full_scan_at", "REAL"),
+    ("card_known", "INTEGER"),
+    ("card_free", "INTEGER"),
+]
 
 FileKey = tuple[str, str, int]  # filename, captured, size
 
@@ -46,6 +58,10 @@ class Camera:
     last_seen_at: float | None
     last_sync_at: float | None
     last_error: str | None
+    full_scan: bool = False
+    last_full_scan_at: float | None = None
+    card_known: int | None = None
+    card_free: int | None = None
 
 
 @dataclass
@@ -75,6 +91,10 @@ class Database:
         self._lock = threading.Lock()
         with self._lock, self._conn:
             self._conn.executescript(SCHEMA)
+            existing = {r["name"] for r in self._conn.execute("PRAGMA table_info(cameras)")}
+            for name, definition in CAMERA_COLUMNS:
+                if name not in existing:
+                    self._conn.execute(f"ALTER TABLE cameras ADD COLUMN {name} {definition}")
 
     def _query(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
         with self._lock:
@@ -108,9 +128,10 @@ class Database:
         return self._camera(rows[0]) if rows else None
 
     def update_camera(self, camera_id: str, *, name: str | None = None, enabled: bool | None = None,
-                      mark_existing: bool | None = None) -> bool:
+                      mark_existing: bool | None = None, full_scan: bool | None = None) -> bool:
         changed = 0
-        for column, value in (("name", name), ("enabled", enabled), ("mark_existing", mark_existing)):
+        for column, value in (("name", name), ("enabled", enabled), ("mark_existing", mark_existing),
+                              ("full_scan", full_scan)):
             if value is not None:
                 value = int(value) if isinstance(value, bool) else value
                 changed += self._execute(f"UPDATE cameras SET {column} = ? WHERE camera_id = ?", (value, camera_id))
@@ -124,12 +145,20 @@ class Database:
             "UPDATE cameras SET last_sync_at = ?, last_error = ? WHERE camera_id = ?", (time.time(), error, camera_id)
         )
 
+    def record_card(self, camera_id: str, known: int, free: int | None, full_scan: bool) -> None:
+        """What the next quick scan checks against (see sync.SyncService._scan)."""
+        self._execute("UPDATE cameras SET card_known = ?, card_free = ? WHERE camera_id = ?", (known, free, camera_id))
+        if full_scan:
+            self._execute("UPDATE cameras SET last_full_scan_at = ?, full_scan = 0 WHERE camera_id = ?",
+                          (time.time(), camera_id))
+
     def delete_camera(self, camera_id: str) -> bool:
         return self._execute("DELETE FROM cameras WHERE camera_id = ?", (camera_id,)) > 0
 
     @staticmethod
     def _camera(row: sqlite3.Row) -> Camera:
-        return Camera(**{**dict(row), "enabled": bool(row["enabled"]), "mark_existing": bool(row["mark_existing"])})
+        return Camera(**{**dict(row), "enabled": bool(row["enabled"]), "mark_existing": bool(row["mark_existing"]),
+                         "full_scan": bool(row["full_scan"])})
 
     # Transferred files
 

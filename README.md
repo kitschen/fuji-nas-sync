@@ -20,8 +20,13 @@ tested against a simulated camera.
 3. The camera offers every file on the card each time; the Pi copies the ones not in its list (same camera, file
    name, capture time and size) to the NAS, showing the progress on the camera.
 
-The camera and the Pi must be in the same subnet, because the camera finds the Pi by broadcast. Reading the file list
-takes about a quarter of a second per file, so with a full card the first new photo arrives after some minutes.
+The camera and the Pi must be in the same subnet, because the camera finds the Pi by broadcast.
+
+Reading a file's details takes about a quarter of a second, so reading a full card (4000 photos) takes about 17
+minutes. The Pi therefore reads from the newest file backwards and stops after a few already copied ones (quick
+scan). Photos shot after deleting others can land in the freed places instead of at the end; the Pi notices that from
+the file count and the card's free space and then reads the whole card. It also does that on the first transfer,
+every 30 days and on request (*Full scan* in the Cameras tab). Quick scanning can be turned off in Settings.
 
 ## Install on a Raspberry Pi
 
