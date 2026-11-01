@@ -188,8 +188,8 @@
           <button id="reset-all" class="danger">Reset list</button>
         </div>
       </div>
-      <p class="muted">Files in this list are not copied again. Remove an entry to copy that file on the next
-        transfer. Files marked as copied without copying (<em>Skip card</em>) have no NAS path.</p>
+      <p class="muted">Files in this list are not copied again. <em>Copy again</em> removes an entry: the next
+        transfer reads the whole card and copies that file. Files marked as copied without copying (<em>Skip card</em>) have no NAS path.</p>
       <table>
         <thead><tr><th>Camera file</th><th>Captured</th><th>Size</th><th>NAS path</th><th>Copied</th><th></th></tr></thead>
         <tbody id="history-rows"></tbody>
@@ -227,10 +227,10 @@
       PC's name here (turn the PC's PC AutoSave off) and the camera does not need to register again.</p></div>
     <div popover id="pop-scan" class="pop"><strong>Quick scan</strong><p>The camera offers every file on the card
       and reading the list takes a quarter of a second per file: about 17 minutes for 4000 photos. A quick scan reads
-      from the newest file backwards and stops at files that are already copied, usually in a few seconds.</p>
-      <p>Photos shot after deleting others in the camera can land in the gaps instead of at the end. The app notices
-      that from the number of files and the card's free space and then reads the whole card. Click <em>Full scan</em>
-      in the Cameras tab to force it once.</p></div>
+      from the newest file backwards and stops at the first one that is already copied, usually within a second.</p>
+      <p>This relies on the camera adding new photos at the end of its list, which the X-E2 does, also after photos
+      were deleted. The whole card is read on the first transfer, after <em>Copy again</em> in the History tab, every
+      ... days as set below, and when you click <em>Full scan</em> in the Cameras tab.</p></div>
     <div popover id="pop-lan" class="pop"><strong>Network interface</strong><p>Before each transfer the app checks
       that the NAS is reached through this interface, usually <code>eth0</code> (the network cable). Leave empty if
       the Pi uses Wi-Fi.</p></div>
@@ -274,9 +274,9 @@
       </ol>
       <p>The camera does not remember what it sent, so it offers every file on the card each time. The Pi skips the
         files it has copied before (same camera, file name, capture time and size). Reading a file's details takes
-        about a quarter of a second, so the Pi reads from the newest file backwards and stops at the ones it already
-        has (<em>quick scan</em>). It reads the whole card on the first transfer, when photos were deleted in the
-        camera, every 30 days, and when you click <em>Full scan</em>: with a full card that takes some minutes.</p>
+        about a quarter of a second, so the Pi reads from the newest file backwards and stops at the first one it
+        already has (<em>quick scan</em>). It reads the whole card on the first transfer, after <em>Copy again</em>,
+        every 30 days, and when you click <em>Full scan</em>: with a full card that takes some minutes.</p>
       <p>If a transfer is interrupted, the next one continues, including the file that was in progress.</p>
 
       <h2 id="help-api">Status for scripts</h2>

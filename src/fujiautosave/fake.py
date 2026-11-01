@@ -26,7 +26,6 @@ from fujiautosave.ptp import (
     Op,
     SessionEnded,
     encode_init_ack,
-    pack_string,
     read_packet,
     unpack_string,
 )
@@ -36,8 +35,6 @@ logger = logging.getLogger(__name__)
 INVALID_OBJECT_HANDLE = 0x2009
 OPERATION_NOT_SUPPORTED = 0x2005
 DEVICE_PROP_NOT_SUPPORTED = 0x200A
-CARD_CAPACITY = 32 * 1024**3
-CLUSTER = 32 * 1024  # FAT32 on a 32 GB card
 CAMERA_GUID = bytes.fromhex("0870b0610a8b4593b2e79357dd36e050")
 
 
@@ -59,10 +56,8 @@ class FakeSessionLog:
 
 class FakeCamera:
     def __init__(self, files: list[FakeFile], *, name: str = "FUJIFILM-X-E2-TEST", model: str = "X-E2",
-                 host: str = "127.0.0.1", ports: Ports = Ports(), cancel_after_requests: int | None = None,
-                 storage_info: bool = True):
+                 host: str = "127.0.0.1", ports: Ports = Ports(), cancel_after_requests: int | None = None):
         self.files = files
-        self.storage_info = storage_info
         self.name = name
         self.model = model
         self.cancel_after_requests = cancel_after_requests
@@ -203,10 +198,6 @@ class FakeCamera:
             if params[0] == Prop.PROGRESS:
                 log.progress.append(unpack_string(data)[0])
             return RESPONSE_OK, None
-        if op == Op.GET_STORAGE_INFO and self.storage_info:
-            used = sum(-(-len(f.data) // CLUSTER) * CLUSTER for f in self.files)
-            return RESPONSE_OK, (struct.pack("<HHHQQI", 4, 3, 0, CARD_CAPACITY, CARD_CAPACITY - used, 0xFFFFFFFF)
-                                 + pack_string("") + pack_string(""))
         if op in (Op.GET_OBJECT_INFO, Op.GET_PARTIAL_OBJECT):
             if not 1 <= params[0] <= len(self.files):
                 return INVALID_OBJECT_HANDLE, None

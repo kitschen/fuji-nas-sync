@@ -145,10 +145,10 @@ u16 count, then count × (u16 property code, u32 value).
 - Handles are positions, not stable ids: handle 9 was `DSCF4558.JPG` in one session and `DSCF4563.JPG` in the
   next. The order is not chronological.
 - So the destination keeps its own list, keyed by camera `DSCNAME` + filename + capture date + size.
-- New photos normally get the last handles. The handle 9 example looks like a file shot after a deletion filling
-  the freed place, so after deleting photos in the camera, new ones can sit anywhere. fuji_sync reads newest first
-  and stops at already copied files (quick scan), then checks the file count and the card's free space against the
-  previous session and reads the whole card if they don't add up (`SyncService._scan`).
+- New photos get the last handles, also after deleting photos elsewhere on the card (X-E2, firmware 4.11, see the
+  open points). fuji_sync relies on that: it reads newest first and stops at the first already copied file (quick
+  scan, `SyncService._scan`), with a full scan on the first transfer, after "Copy again", every 30 days and on
+  request. The handle 9 example above (a new file at a deleted file's place) would only be caught by a full scan.
 
 ### ObjectInfo (data of 0x1008)
 
@@ -204,8 +204,7 @@ the firmware update changes nothing for us, and the movie error is still on the 
   with firmware 4.11 new files seem to be appended; the 2016 handle 9 observation (firmware 3.00) is unexplained.
 
 `GetStorageInfo` (0x1005), which PC AutoSave never calls, is answered with OK but no data at all in AutoSave mode
-(X-E2, firmware 4.11, 2026-11-01). So there is no free space to check, and the quick scan only has the file count:
-deleting n photos and shooting n that fill exactly the freed places goes unseen until the next full scan.
+(X-E2, firmware 4.11, 2026-11-01). So the card's free space can't be used to notice files outside the scanned end.
 - The camera normally sends IMPORT about 11–13 s after our NOTIFY. On 2026-10-31 it twice sent DISCOVER, accepted
   the NOTIFY and then never sent IMPORT (no TCP connection to 51541 at all); the third try right after worked. Both
   were the first tries after the camera had searched for a long time while no destination was listening. Not captured;

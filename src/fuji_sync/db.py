@@ -20,9 +20,7 @@ CREATE TABLE IF NOT EXISTS cameras (
     last_sync_at   REAL,
     last_error     TEXT,
     full_scan      INTEGER NOT NULL DEFAULT 0,  -- next transfer reads the whole card
-    last_full_scan_at REAL,
-    card_known     INTEGER,  -- files on the card that were in the list after the last scan
-    card_free      INTEGER   -- free bytes on the card then, plus the size of the files not yet copied
+    last_full_scan_at REAL
 );
 CREATE TABLE IF NOT EXISTS transferred (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,8 +38,6 @@ CREATE TABLE IF NOT EXISTS transferred (
 CAMERA_COLUMNS = [
     ("full_scan", "INTEGER NOT NULL DEFAULT 0"),
     ("last_full_scan_at", "REAL"),
-    ("card_known", "INTEGER"),
-    ("card_free", "INTEGER"),
 ]
 
 FileKey = tuple[str, str, int]  # filename, captured, size
@@ -60,8 +56,9 @@ class Camera:
     last_error: str | None
     full_scan: bool = False
     last_full_scan_at: float | None = None
-    card_known: int | None = None
-    card_free: int | None = None
+
+
+CAMERA_FIELDS = set(Camera.__dataclass_fields__)
 
 
 @dataclass
@@ -145,19 +142,17 @@ class Database:
             "UPDATE cameras SET last_sync_at = ?, last_error = ? WHERE camera_id = ?", (time.time(), error, camera_id)
         )
 
-    def record_card(self, camera_id: str, known: int, free: int | None, full_scan: bool) -> None:
-        """What the next quick scan checks against (see sync.SyncService._scan)."""
-        self._execute("UPDATE cameras SET card_known = ?, card_free = ? WHERE camera_id = ?", (known, free, camera_id))
-        if full_scan:
-            self._execute("UPDATE cameras SET last_full_scan_at = ?, full_scan = 0 WHERE camera_id = ?",
-                          (time.time(), camera_id))
+    def record_full_scan(self, camera_id: str) -> None:
+        self._execute("UPDATE cameras SET last_full_scan_at = ?, full_scan = 0 WHERE camera_id = ?",
+                      (time.time(), camera_id))
 
     def delete_camera(self, camera_id: str) -> bool:
         return self._execute("DELETE FROM cameras WHERE camera_id = ?", (camera_id,)) > 0
 
     @staticmethod
     def _camera(row: sqlite3.Row) -> Camera:
-        return Camera(**{**dict(row), "enabled": bool(row["enabled"]), "mark_existing": bool(row["mark_existing"]),
+        values = {k: row[k] for k in row.keys() if k in CAMERA_FIELDS}  # databases may have dropped columns
+        return Camera(**{**values, "enabled": bool(row["enabled"]), "mark_existing": bool(row["mark_existing"]),
                          "full_scan": bool(row["full_scan"])})
 
     # Transferred files
@@ -204,9 +199,17 @@ class Database:
         return [TransferredFile(**dict(r)) for r in rows], total
 
     def delete_transferred(self, file_id: int) -> bool:
-        return self._execute("DELETE FROM transferred WHERE id = ?", (file_id,)) > 0
+        """Copy the file again. It may sit in the middle of the card, so the camera's next scan reads all of it."""
+        rows = self._query("SELECT camera_id FROM transferred WHERE id = ?", (file_id,))
+        if not rows:
+            return False
+        self._execute("DELETE FROM transferred WHERE id = ?", (file_id,))
+        self.update_camera(rows[0]["camera_id"], full_scan=True)
+        return True
 
     def reset_transferred(self, camera_id: str | None = None) -> int:
         if camera_id:
+            self.update_camera(camera_id, full_scan=True)
             return self._execute("DELETE FROM transferred WHERE camera_id = ?", (camera_id,))
+        self._execute("UPDATE cameras SET full_scan = 1")
         return self._execute("DELETE FROM transferred")

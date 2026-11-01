@@ -300,43 +300,31 @@ async def test_quick_scan_reads_only_the_newest_files(service, db, ports, target
         log, job = await autosave(service, camera)
         assert (job.scan, job.scan_note, job.files_done, info_reads(log)) == ("full", "first transfer", 100, 100)
 
-        files += [FakeFile("DSCF0100.JPG", b"a", datetime(2026, 10, 2)), FakeFile("DSCF0101.JPG", b"b", datetime(2026, 10, 2))]
+        files += [FakeFile(f"DSCF01{i:02d}.JPG", b"new", datetime(2026, 10, 2)) for i in range(2)]
         log, job = await autosave(service, camera)
         assert (job.scan, job.files_new, job.files_done) == ("quick", 2, 2)
-        assert info_reads(log) == 2 + 3  # the new ones, then 3 already copied in a row
+        assert info_reads(log) == 2 + 1  # the new ones, then the first already copied one
 
         log, job = await autosave(service, camera)
-        assert (job.scan, job.files_new, info_reads(log)) == ("quick", 0, 3)
+        assert (job.scan, job.files_new, info_reads(log)) == ("quick", 0, 1)
         assert log.progress == ["0/0"]
 
 
-async def test_photo_shot_into_a_gap_is_found_by_the_free_space_check(service, db, ports, target):
-    files = card(50, size=2_000_000)
+async def test_deleting_in_the_middle_needs_no_full_scan(service, db, ports, target):
+    """The camera adds new files at the end, also after deleting others (seen on an X-E2, firmware 4.11)."""
+    files = card(50)
     async with FakeCamera(files, ports=ports) as camera:
         await autosave(service, camera)
-        # Deleted in the camera, then a new photo of another size fills the gap: same count as before
-        files[10] = FakeFile("DSCF0050.JPG", os.urandom(1_000_000), datetime(2026, 10, 2))
+        del files[10], files[20]
+        files.append(FakeFile("DSCF0050.JPG", b"new", datetime(2026, 10, 2)))
         log, job = await autosave(service, camera)
-    assert job.scan == "full" and "free space" in job.scan_note
-    assert job.files_done == 1 and "Fujifilm/X-E2 TEST/2026-10-02/DSCF0050.JPG" in nas_files(target)
+    assert (job.scan, job.files_done, info_reads(log)) == ("quick", 1, 2)
 
 
-async def test_deletions_are_found_by_the_count_check(service, db, ports, target):
-    files = card(50)
-    async with FakeCamera(files, ports=ports, storage_info=False) as camera:
-        await autosave(service, camera)
-        del files[20:22]  # two deleted, one new in the gap, one at the end
-        files.insert(20, FakeFile("DSCF0050.JPG", b"gap", datetime(2026, 10, 2)))
-        files.append(FakeFile("DSCF0051.JPG", b"end", datetime(2026, 10, 2)))
-        log, job = await autosave(service, camera)
-    assert job.scan == "full" and "deleted or added elsewhere" in job.scan_note
-    assert job.files_done == 2
-
-
-async def test_without_free_space_a_swap_needs_a_full_scan(service, db, ports, target):
-    """The known limit: without GetStorageInfo, deleting one photo and shooting one into its gap looks unchanged."""
+async def test_photo_in_a_gap_needs_a_full_scan(service, db, ports, target):
+    """Relying on the camera adding at the end: a file in the middle is only found by a full scan."""
     files = card(30)
-    async with FakeCamera(files, ports=ports, storage_info=False) as camera:
+    async with FakeCamera(files, ports=ports) as camera:
         await autosave(service, camera)
         files[5] = FakeFile("DSCF0030.JPG", b"gap", datetime(2026, 10, 2))
         log, job = await autosave(service, camera)
@@ -348,11 +336,46 @@ async def test_without_free_space_a_swap_needs_a_full_scan(service, db, ports, t
         assert db.get_camera(CAMERA_ID).full_scan is False
 
 
+async def test_copy_again_requests_a_full_scan(service, db, ports, target):
+    files = card(20)
+    async with FakeCamera(files, ports=ports) as camera:
+        await autosave(service, camera)
+        entry = next(f for f in db.list_transferred(CAMERA_ID)[0] if f.filename == "DSCF0005.JPG")
+        db.delete_transferred(entry.id)
+        assert db.get_camera(CAMERA_ID).full_scan
+        log, job = await autosave(service, camera)
+        assert (job.scan, job.scan_note, job.files_done) == ("full", "requested", 1)
+
+        db.reset_transferred(CAMERA_ID)
+        log, job = await autosave(service, camera)
+        assert (job.scan, job.files_done) == ("full", 20)
+
+
+async def test_failed_full_scan_is_repeated(service, db, nas, ports, target, monkeypatch):
+    """A file found in the middle and not copied would be missed by a quick scan, so the next scan is full again."""
+    files = card(20)
+    async with FakeCamera(files, ports=ports) as camera:
+        await autosave(service, camera)
+        db.update_camera(CAMERA_ID, full_scan=True)
+        files[3] = FakeFile("DSCF0020.JPG", b"gap", datetime(2026, 10, 2))
+
+        async def broken(*args):
+            raise IOError("NAS write failed")
+
+        monkeypatch.setattr(service, "_transfer", broken)
+        log, job = await autosave(service, camera)
+        assert job.phase == "failed" and db.get_camera(CAMERA_ID).full_scan
+
+        monkeypatch.undo()
+        log, job = await autosave(service, camera)
+        assert (job.scan, job.files_done) == ("full", 1)
+
+
 async def test_periodic_full_scan_and_quick_scan_off(service, db, config, ports, target):
     files = card(10)
     async with FakeCamera(files, ports=ports) as camera:
         await autosave(service, camera)
-        db._execute("UPDATE cameras SET last_full_scan_at = 0")
+        db._execute("UPDATE cameras SET last_full_scan_at = 1")
         log, job = await autosave(service, camera)
         assert job.scan == "full" and job.scan_note == "no full scan for 30 days"
         log, job = await autosave(service, camera)
@@ -365,17 +388,20 @@ async def test_periodic_full_scan_and_quick_scan_off(service, db, config, ports,
         assert (job.scan, job.scan_note, info_reads(log)) == ("full", "quick scan is off", 10)
 
 
-def test_old_database_gets_the_new_camera_columns(tmp_path):
+def test_old_databases_are_upgraded(tmp_path):
+    """Before quick scan (no scan columns), and from the first quick scan version (count columns, now unused)."""
     import sqlite3
 
-    path = tmp_path / "old.db"
-    with sqlite3.connect(path) as conn:
-        conn.execute("""CREATE TABLE cameras (camera_id TEXT PRIMARY KEY, name TEXT NOT NULL, model TEXT NOT NULL,
-            enabled INTEGER NOT NULL DEFAULT 1, mark_existing INTEGER NOT NULL DEFAULT 0, registered_at REAL NOT NULL,
-            last_seen_at REAL, last_sync_at REAL, last_error TEXT)""")
-        conn.execute("INSERT INTO cameras (camera_id, name, model, registered_at) VALUES ('C', 'Cam', 'X-E2', 0)")
-    cam = Database(path).get_camera("C")
-    assert (cam.name, cam.full_scan, cam.card_known, cam.last_full_scan_at) == ("Cam", False, None, None)
+    for extra in ("", ", full_scan INTEGER NOT NULL DEFAULT 0, last_full_scan_at REAL, card_known INTEGER, "
+                      "card_free INTEGER"):
+        path = tmp_path / f"old{len(extra)}.db"
+        with sqlite3.connect(path) as conn:
+            conn.execute(f"""CREATE TABLE cameras (camera_id TEXT PRIMARY KEY, name TEXT NOT NULL,
+                model TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, mark_existing INTEGER NOT NULL DEFAULT 0,
+                registered_at REAL NOT NULL, last_seen_at REAL, last_sync_at REAL, last_error TEXT{extra})""")
+            conn.execute("INSERT INTO cameras (camera_id, name, model, registered_at) VALUES ('C', 'Cam', 'X-E2', 0)")
+        cam = Database(path).get_camera("C")
+        assert (cam.name, cam.full_scan, cam.last_full_scan_at) == ("Cam", False, None)
 
 
 def test_scan_settings_and_full_scan_flag(client, config, db):

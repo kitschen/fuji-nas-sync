@@ -23,10 +23,10 @@ tested against a simulated camera.
 The camera and the Pi must be in the same subnet, because the camera finds the Pi by broadcast.
 
 Reading a file's details takes about a quarter of a second, so reading a full card (4000 photos) takes about 17
-minutes. The Pi therefore reads from the newest file backwards and stops after a few already copied ones (quick
-scan). Photos shot after deleting others can land in the freed places instead of at the end; the Pi notices that from
-the file count and the card's free space and then reads the whole card. It also does that on the first transfer,
-every 30 days and on request (*Full scan* in the Cameras tab). Quick scanning can be turned off in Settings.
+minutes. The camera adds new photos at the end of its list, also after photos were deleted, so the Pi reads from the
+newest file backwards and stops at the first one it already copied (quick scan, usually under a second). It reads the
+whole card on the first transfer, after *Copy again* in the History tab, every 30 days and on request (*Full scan* in
+the Cameras tab). Quick scanning can be turned off in Settings.
 
 ## Install on a Raspberry Pi
 

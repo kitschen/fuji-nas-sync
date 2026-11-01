@@ -79,7 +79,7 @@ class StorageConfig(BaseModel):
 class ScanConfig(BaseModel):
     # Read the newest files first and stop at already copied ones, instead of the whole card (4 files per second)
     quick: bool = True
-    stop_after: int = Field(3, ge=1)  # already copied files in a row that end a quick scan
+    stop_after: int = Field(1, ge=1)  # already copied files in a row that end a quick scan
     full_every_days: int = Field(30, ge=0)  # read the whole card now and then anyway; 0 = only when needed
 
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import socket
 import struct
-from collections.abc import AsyncIterator, Callable, Iterable
+from collections.abc import AsyncIterator, Callable
 
 from fujiautosave.discovery import CameraInfo
 from fujiautosave.fuji import (
@@ -21,12 +21,11 @@ from fujiautosave.fuji import (
     parse_object_info,
     progress_text,
 )
-from fujiautosave.ptp import Op, ProtocolError, PtpConnection, PtpError, ResponseError, SessionEnded, pack_string
+from fujiautosave.ptp import Op, ProtocolError, PtpConnection, PtpError, SessionEnded, pack_string
 
 logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 0x100000  # what PC AutoSave asks for; the camera's maximum
-STORAGE_ID = 0x10000001  # the SD card, as in every ObjectInfo
 KEEPALIVE_EVERY = 20  # PC AutoSave polls the events list now and then while reading object infos
 
 
@@ -92,29 +91,14 @@ class AutoSaveSession:
                 on_progress(len(objects), self.object_count)
         return objects
 
-    async def iter_objects(self, newest_first: bool = False,
-                           handles: Iterable[int] | None = None) -> AsyncIterator[ObjectInfo]:
-        """The files one by one, by handle (all of them unless `handles` is given). `newest_first` starts at the end
-        of the card, where new photos usually are; files shot after deleting others can fill the gaps instead."""
-        if handles is None:
-            handles = range(self.object_count, 0, -1) if newest_first else range(1, self.object_count + 1)
+    async def iter_objects(self, newest_first: bool = False) -> AsyncIterator[ObjectInfo]:
+        """The files one by one, by handle. `newest_first` starts at the end of the list, where the camera adds new
+        files (also after files were deleted elsewhere on the card)."""
+        handles = range(self.object_count, 0, -1) if newest_first else range(1, self.object_count + 1)
         for read, handle in enumerate(handles, start=1):
             yield await self.object_info(handle)
             if read % KEEPALIVE_EVERY == 0:
                 await self.poll_events()
-
-    async def free_space(self, storage_id: int = STORAGE_ID) -> int | None:
-        """Free bytes on the card (GetStorageInfo), or None if the camera refuses it. PC AutoSave never asks."""
-        try:
-            data = (await self._conn.transaction(Op.GET_STORAGE_INFO, (storage_id,))).data
-        except ResponseError as e:
-            logger.info("camera refuses GetStorageInfo: 0x%04x", e.code)
-            return None
-        # StorageType, FilesystemType, AccessCapability (u16 each), MaxCapacity (u64), FreeSpaceInBytes (u64)
-        if len(data) < 22:  # the X-E2 answers OK without any data
-            logger.debug("GetStorageInfo answer too short for the free space: %d bytes %s", len(data), data.hex())
-            return None
-        return struct.unpack_from("<Q", data, 14)[0]
 
     async def set_progress(self, done: int, total: int, error: bool = False) -> None:
         """Text on the camera's screen, e.g. 3/5."""
