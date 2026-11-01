@@ -200,6 +200,8 @@ the firmware update changes nothing for us, and the movie error is still on the 
 - Whether the camera really puts new files into freed places (the handle 9 observation), and whether file order
   otherwise follows shooting order on a card with many folders. On 2026-11-01 (firmware 4.11), deleting 2 photos and
   shooting 2 put the new ones at the end (handles 10 and 11 of 11); the count check saw the deletion and read the card.
+  Deleting DSCF2097 from the middle of the card and shooting one also put the new photo (DSCF2105) at the end. So
+  with firmware 4.11 new files seem to be appended; the 2016 handle 9 observation (firmware 3.00) is unexplained.
 
 `GetStorageInfo` (0x1005), which PC AutoSave never calls, is answered with OK but no data at all in AutoSave mode
 (X-E2, firmware 4.11, 2026-11-01). So there is no free space to check, and the quick scan only has the file count:
