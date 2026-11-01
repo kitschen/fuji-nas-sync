@@ -197,11 +197,13 @@ the firmware update changes nothing for us, and the movie error is still on the 
   GetObjectPropList, which PC AutoSave never uses).
 - Camera timeout when the destination is slow (NAS write stalls).
 - Whether `GetDeviceInfo` (serial number) is allowed in AutoSave mode; PC AutoSave never calls it.
-- Whether `GetStorageInfo` (0x1005, free space) is allowed in AutoSave mode; PC AutoSave never calls it. Without it
-  the quick scan only has the file count to notice photos shot into gaps (deleting n and shooting n goes unseen until
-  the next full scan).
 - Whether the camera really puts new files into freed places (the handle 9 observation), and whether file order
-  otherwise follows shooting order on a card with many folders.
+  otherwise follows shooting order on a card with many folders. On 2026-11-01 (firmware 4.11), deleting 2 photos and
+  shooting 2 put the new ones at the end (handles 10 and 11 of 11); the count check saw the deletion and read the card.
+
+`GetStorageInfo` (0x1005), which PC AutoSave never calls, is answered with OK but no data at all in AutoSave mode
+(X-E2, firmware 4.11, 2026-11-01). So there is no free space to check, and the quick scan only has the file count:
+deleting n photos and shooting n that fill exactly the freed places goes unseen until the next full scan.
 - The camera normally sends IMPORT about 11–13 s after our NOTIFY. On 2026-10-31 it twice sent DISCOVER, accepted
   the NOTIFY and then never sent IMPORT (no TCP connection to 51541 at all); the third try right after worked. Both
   were the first tries after the camera had searched for a long time while no destination was listening. Not captured;
