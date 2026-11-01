@@ -111,7 +111,12 @@ class AutoSaveSession:
             logger.info("camera refuses GetStorageInfo: 0x%04x", e.code)
             return None
         # StorageType, FilesystemType, AccessCapability (u16 each), MaxCapacity (u64), FreeSpaceInBytes (u64)
-        return struct.unpack_from("<Q", data, 14)[0] if len(data) >= 22 else None
+        if len(data) < 22:
+            logger.info("GetStorageInfo answer too short for the free space: %d bytes %s", len(data), data.hex())
+            return None
+        free = struct.unpack_from("<Q", data, 14)[0]
+        logger.info("card free space: %d bytes", free)
+        return free
 
     async def set_progress(self, done: int, total: int, error: bool = False) -> None:
         """Text on the camera's screen, e.g. 3/5."""
